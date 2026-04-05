@@ -1,0 +1,149 @@
+"""
+RedTeamForge — Report Agent
+Generates the final markdown security report and computes a risk score.
+"""
+
+from __future__ import annotations
+import datetime
+from attack_engine import AttackSimulation
+from llm_detector import LLMDetection
+
+
+def compute_risk_score(
+    scan_results: str,
+    attacks: list[AttackSimulation],
+    llm_detections: list[LLMDetection],
+) -> int:
+    """
+    Compute a 0-100 risk score based on findings.
+    Weights:  CRITICAL=25, HIGH=15, MEDIUM=8, LOW=3, LLM=10 each (capped at 100).
+    """
+    score = 0
+    severity_weights = {"CRITICAL": 25, "HIGH": 15, "MEDIUM": 8, "LOW": 3}
+
+    for atk in attacks:
+        score += severity_weights.get(atk.severity, 5)
+
+    # Each LLM detection adds risk
+    score += min(len(llm_detections) * 5, 20)
+
+    # Bonus points if scan found many items
+    finding_lines = [l for l in scan_results.splitlines() if l.strip().startswith("[")]
+    score += min(len(finding_lines) * 3, 15)
+
+    return min(score, 100)
+
+
+def _risk_label(score: int) -> str:
+    if score >= 75:
+        return "🔴 CRITICAL"
+    if score >= 50:
+        return "🟠 HIGH"
+    if score >= 25:
+        return "🟡 MEDIUM"
+    if score > 0:
+        return "🟢 LOW"
+    return "✅ CLEAN"
+
+
+def generate_report(
+    scan_results: str,
+    fuzz_results: list[str],
+    llm_analysis: str,
+    attacks: list[AttackSimulation],
+    llm_detections: list[LLMDetection],
+    pr_url: str = "",
+) -> str:
+    """Generate the full markdown RedTeamForge report."""
+    risk_score = compute_risk_score(scan_results, attacks, llm_detections)
+    label = _risk_label(risk_score)
+    now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+    lines: list[str] = []
+    lines.append("# 🛡️ RedTeamForge Security Report")
+    lines.append("")
+    if pr_url:
+        lines.append(f"> **Pull Request:** {pr_url}")
+    lines.append(f"> **Generated:** {now}")
+    lines.append(f"> **Risk Score:** {risk_score}/100 — {label}")
+    lines.append("")
+
+    # ── Summary ───────────────────────────────────────────
+    lines.append("## 📋 Summary")
+    lines.append("")
+    total_findings = len(attacks)
+    llm_count = len(llm_detections)
+    lines.append(f"| Metric | Value |")
+    lines.append(f"|--------|-------|")
+    lines.append(f"| Vulnerability Classes | {total_findings} |")
+    lines.append(f"| LLM/AI Detections | {llm_count} |")
+    lines.append(f"| Risk Score | {risk_score}/100 {label} |")
+    lines.append("")
+
+    # ── Scan Findings ─────────────────────────────────────
+    lines.append("## 🔍 Static Analysis Findings")
+    lines.append("")
+    if scan_results and "No findings" not in scan_results:
+        lines.append("```")
+        lines.append(scan_results[:3000])
+        lines.append("```")
+    else:
+        lines.append("No static analysis findings.")
+    lines.append("")
+
+    # ── Fuzz Results ──────────────────────────────────────
+    lines.append("## 🧪 Fuzz Testing Results")
+    lines.append("")
+    for fr in fuzz_results:
+        lines.append(f"- {fr}")
+    lines.append("")
+
+    # ── Attack Simulations ────────────────────────────────
+    if attacks:
+        lines.append("## ⚔️ Attack Simulations")
+        lines.append("")
+        for atk in attacks:
+            lines.append(f"### {atk.vuln_name} ({atk.severity} — {atk.cwe})")
+            lines.append(f"**Impact:** {atk.impact}")
+            lines.append("")
+            lines.append("**Attack Steps:**")
+            for step in atk.steps:
+                lines.append(f"  {step}")
+            lines.append("")
+            lines.append("**Example Payloads:**")
+            lines.append("```")
+            for p in atk.payloads:
+                lines.append(p)
+            lines.append("```")
+            lines.append("")
+
+    # ── LLM Detections ────────────────────────────────────
+    if llm_detections:
+        lines.append("## 🤖 LLM / AI Code Detections")
+        lines.append("")
+        lines.append("| File | Line | Pattern | Risk |")
+        lines.append("|------|------|---------|------|")
+        for d in llm_detections:
+            lines.append(f"| `{d.file}` | {d.line} | {d.pattern} | {d.risk_note} |")
+        lines.append("")
+
+    # ── LLM Expert Analysis ──────────────────────────────
+    lines.append("## 🧠 AI Red-Team Analysis")
+    lines.append("")
+    lines.append(llm_analysis if llm_analysis else "No LLM analysis available (Ollama may be offline).")
+    lines.append("")
+
+    # ── Recommendations ──────────────────────────────────
+    lines.append("## ✅ Recommendations")
+    lines.append("")
+    if risk_score >= 50:
+        lines.append("- ❌ **Do NOT merge** this PR until critical findings are addressed.")
+    elif risk_score >= 25:
+        lines.append("- ⚠️ **Review carefully** before merging — medium-risk findings present.")
+    else:
+        lines.append("- ✅ No critical issues found. Proceed with standard code review.")
+    lines.append("")
+    lines.append("---")
+    lines.append("*Generated by [RedTeamForge](https://github.com/sharmaariteshh) — Autonomous AI Red-Team Engine*")
+
+    return "\n".join(lines)
