@@ -4,6 +4,9 @@ Loads settings from environment variables with sensible defaults.
 """
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ── Ollama / LLM ──────────────────────────────────────────────
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")

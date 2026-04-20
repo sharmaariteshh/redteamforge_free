@@ -1,121 +1,101 @@
 import os
-import json
+import base64
 import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
-token = os.environ.get('GITHUB_TOKEN')
-if not token:
-    print("No GITHUB_TOKEN found.")
-    exit(1)
-
-headers = {
-    'Authorization': f'Bearer {token}',
-    'Accept': 'application/vnd.github.v3+json'
-}
-
-client = httpx.Client(base_url="https://api.github.com", headers=headers)
+token = os.environ["GITHUB_TOKEN"]
 owner = "sharmaariteshh"
 repo = "redteamforge_free"
+headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+
+client = httpx.Client(base_url="https://api.github.com", headers=headers)
 
 # 1. Get main branch SHA
-res = client.get(f"/repos/{owner}/{repo}/git/ref/heads/main")
-if res.status_code != 200:
-    # Try master
-    res = client.get(f"/repos/{owner}/{repo}/git/ref/heads/master")
-    if res.status_code != 200:
-        print("Could not find main or master branch")
-        print(res.text)
-        exit(1)
+r = client.get(f"/repos/{owner}/{repo}/git/ref/heads/main")
+sha = r.json()["object"]["sha"]
+print(f"Main SHA: {sha}")
 
-sha = res.json()["object"]["sha"]
-print(f"Base SHA: {sha}")
+# 2. Create test branch
+r = client.post(f"/repos/{owner}/{repo}/git/refs", json={
+    "ref": "refs/heads/test-vuln-scan",
+    "sha": sha
+})
+print(f"Create branch: {r.status_code}")
 
-# 2. Create a new branch
-branch_name = "test-vulnerability-scan"
-res = client.post(
-    f"/repos/{owner}/{repo}/git/refs",
-    json={"ref": f"refs/heads/{branch_name}", "sha": sha}
-)
-# If branch exists it might return 422, which is fine, we can still push to it ideally, but let's just use it
-print(f"Create branch: {res.status_code}")
-
-# 3. Create a vulnerable file via API
-vulnerable_code = """
-from flask import Flask, request
+# 3. Create a deliberately vulnerable file
+vuln_code = '''from flask import Flask, request
 import sqlite3
 import os
+import subprocess
 
 app = Flask(__name__)
 
-# Hardcoded secret
-AWS_ACCESS_KEY_ID = "AKIA1234567890EXAMPLE"
+# VULN: Hardcoded secret
+DATABASE_PASSWORD = "admin123"
+AWS_SECRET_KEY = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
 
 @app.route("/user")
 def get_user():
     user_id = request.args.get("id")
-    # SQL Injection
-    conn = sqlite3.connect("db.sqlite")
-    cursor = conn.cursor()
-    cursor.execute(f"SELECT * FROM users WHERE id = {user_id}")
-    return str(cursor.fetchall())
+    conn = sqlite3.connect("app.db")
+    # VULN: SQL Injection - unsanitized input in query
+    result = conn.execute(f"SELECT * FROM users WHERE id = {user_id}")
+    return str(result.fetchall())
 
-@app.route("/exec")
-def exec_cmd():
+@app.route("/search")
+def search():
+    query = request.args.get("q")
+    # VULN: XSS - unescaped user input in response
+    return f"<h1>Results for: {query}</h1>"
+
+@app.route("/run")
+def run_cmd():
     cmd = request.args.get("cmd")
-    # Command Injection
-    os.system(cmd)
-    return "Executed"
-    
+    # VULN: Command Injection
+    output = subprocess.getoutput(cmd)
+    return output
+
+@app.route("/file")
+def read_file():
+    path = request.args.get("path")
+    # VULN: Path Traversal
+    with open(path, "r") as f:
+        return f.read()
+
+# VULN: LLM usage with prompt injection risk
 import openai
-api_key = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-client = openai.OpenAI(api_key=api_key)
-"""
+client_ai = openai.OpenAI(api_key="sk-1234567890abcdef1234567890abcdef")
 
-res = client.put(
-    f"/repos/{owner}/{repo}/contents/vulnerable_app.py",
-    json={
-        "message": "Add vulnerable app for testing",
-        "content": vulnerable_code.encode("utf-8").hex(), # Need base64, using base64 module
-        "branch": branch_name
-    }
-)
-import base64
-res = client.put(
-    f"/repos/{owner}/{repo}/contents/vulnerable_app.py",
-    json={
-        "message": "Add vulnerable app for testing",
-        "content": base64.b64encode(vulnerable_code.encode("utf-8")).decode("utf-8"),
-        "branch": branch_name
-    }
-)
-print(f"Create file: {res.status_code}")
-
-# 4. Create PR
-res = client.post(
-    f"/repos/{owner}/{repo}/pulls",
-    json={
-        "title": "🔴 Test PR: Vulnerability Scan",
-        "body": "This PR contains deliberate vulnerabilities to test the RedTeamForge engine.",
-        "head": branch_name,
-        "base": "main" # or master
-    }
-)
-
-if res.status_code == 422:
-    # Try master
-    res = client.post(
-        f"/repos/{owner}/{repo}/pulls",
-        json={
-            "title": "🔴 Test PR: Vulnerability Scan",
-            "body": "This PR contains deliberate vulnerabilities to test the RedTeamForge engine.",
-            "head": branch_name,
-            "base": "master"
-        }
+@app.route("/ask")
+def ask_ai():
+    user_input = request.args.get("question")
+    # VULN: Prompt injection - user input directly in prompt
+    response = client_ai.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": f"Answer this: {user_input}"}]
     )
+    return response.choices[0].message.content
+'''
 
-print(f"Create PR: {res.status_code}")
-if "html_url" in res.json():
-    print(f"PR created successfully: {res.json()['html_url']}")
+r = client.put(f"/repos/{owner}/{repo}/contents/vulnerable_app.py", json={
+    "message": "Add app with multiple vulnerabilities for security testing",
+    "content": base64.b64encode(vuln_code.encode()).decode(),
+    "branch": "test-vuln-scan"
+})
+print(f"Create vuln file: {r.status_code}")
+
+# 4. Create Pull Request
+r = client.post(f"/repos/{owner}/{repo}/pulls", json={
+    "title": "feat: Add new application endpoint",
+    "body": "Added new user management and AI-powered search endpoints.",
+    "head": "test-vuln-scan",
+    "base": "main"
+})
+print(f"Create PR: {r.status_code}")
+if r.status_code == 201:
+    pr = r.json()
+    print(f"\n PR created: {pr['html_url']}")
+    print(f"PR #{pr['number']} - waiting for RedTeamForge webhook...")
 else:
-    print(res.text)
+    print(r.text[:500])

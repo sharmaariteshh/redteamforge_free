@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Scan {{ scan.id[:12] }} — RedTeamForge{% endblock %}
+
+{% block content %}
+<div class="detail-header">
+    <a href="/dashboard" class="back-link">&larr; Dashboard</a>
+    <h1>Scan <code>{{ scan.id }}</code></h1>
+</div>
+
+<!-- Meta Cards -->
+<div class="meta-grid">
+    <div class="meta-card glass">
+        <div class="meta-label">Repository</div>
+        <div class="meta-value">{{ scan.repo }}</div>
+    </div>
+    <div class="meta-card glass">
+        <div class="meta-label">PR</div>
+        <div class="meta-value">
+            {% if scan.pr_number %}
+            <a href="{{ scan.pr_url }}" target="_blank" class="pr-link">#{{ scan.pr_number }}</a>
+            {% else %}Manual scan{% endif %}
+        </div>
+    </div>
+    <div class="meta-card glass">
+        <div class="meta-label">Status</div>
+        <div class="meta-value">
+            <span class="status-badge status-{{ scan.status }}">{{ scan.status }}</span>
+        </div>
+    </div>
+    <div class="meta-card glass">
+        <div class="meta-label">Risk Score</div>
+        <div class="meta-value">
+            <span class="risk-score-big {% if scan.risk_score >= 75 %}severity-critical{% elif scan.risk_score >= 50 %}severity-high{% elif scan.risk_score >= 25 %}severity-medium{% else %}severity-low{% endif %}">
+                {{ scan.risk_score }}<small>/100</small>
+            </span>
+        </div>
+    </div>
+    <div class="meta-card glass">
+        <div class="meta-label">Commit</div>
+        <div class="meta-value"><code>{{ scan.head_sha[:8] if scan.head_sha else '--' }}</code></div>
+    </div>
+    <div class="meta-card glass">
+        <div class="meta-label">Date</div>
+        <div class="meta-value" id="scan-date">
+            {% if scan.created_at %}
+            <script>document.getElementById('scan-date').textContent = new Date({{ scan.created_at }} * 1000).toLocaleString();</script>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Vulnerabilities -->
+{% if scan.vulnerabilities %}
+<div class="section glass">
+    <h2>Vulnerabilities <span class="count-badge">{{ scan.vulnerabilities | length }}</span></h2>
+    <table class="vuln-table">
+        <thead>
+            <tr>
+                <th>Severity</th>
+                <th>File</th>
+                <th>Line</th>
+                <th>Rule</th>
+                <th>Message</th>
+                <th>Category</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for v in scan.vulnerabilities %}
+            <tr>
+                <td><span class="severity-badge severity-{{ v.severity | lower }}">{{ v.severity }}</span></td>
+                <td><code>{{ v.file }}</code></td>
+                <td>{{ v.line }}</td>
+                <td><code>{{ v.rule_id }}</code></td>
+                <td>{{ v.message[:100] }}</td>
+                <td><span class="category-tag">{{ v.category }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Attack Simulations -->
+{% if scan.simulations %}
+<div class="section glass">
+    <h2>Attack Simulations <span class="count-badge">{{ scan.simulations | length }}</span></h2>
+    <div class="sim-grid">
+        {% for sim in scan.simulations %}
+        <div class="sim-card">
+            <div class="sim-header">
+                <h3>{{ sim.vuln_name }}</h3>
+                <div class="sim-meta">
+                    <span class="severity-badge severity-{{ sim.severity | lower }}">{{ sim.severity }}</span>
+                    <code>{{ sim.cwe }}</code>
+                </div>
+            </div>
+            <p class="sim-impact"><strong>Impact:</strong> {{ sim.impact }}</p>
+            {% if sim.steps %}
+            <div class="sim-steps">
+                <h4>Attack Steps</h4>
+                <ol>{% for step in sim.steps %}<li>{{ step }}</li>{% endfor %}</ol>
+            </div>
+            {% endif %}
+            {% if sim.payloads %}
+            <div class="sim-payloads">
+                <h4>Payloads</h4>
+                <pre><code>{% for p in sim.payloads %}{{ p }}
+{% endfor %}</code></pre>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Full Report -->
+{% if report_html %}
+<div class="section glass">
+    <h2>Full Report</h2>
+    <div class="report-content">{{ report_html | safe }}</div>
+</div>
+{% endif %}
+
+<!-- Error -->
+{% if scan.error_message %}
+<div class="section glass error-section">
+    <h2>Error</h2>
+    <pre class="error-output">{{ scan.error_message }}</pre>
+</div>
+{% endif %}
+{% endblock %}

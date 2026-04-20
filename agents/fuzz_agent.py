@@ -6,6 +6,9 @@ found in the changed code to detect injection points.
 
 from __future__ import annotations
 import re
+from logger import get_logger
+
+log = get_logger("fuzz_agent")
 
 PAYLOADS = {
     "sqli": [
@@ -54,6 +57,7 @@ async def fuzz(repo_path: str, changed_files_content: dict[str, str] | None = No
     findings: list[str] = []
 
     if not changed_files_content:
+        log.info("No files to fuzz")
         return ["Fuzz: No files to analyze."]
 
     for filepath, content in changed_files_content.items():
@@ -68,5 +72,8 @@ async def fuzz(repo_path: str, changed_files_content: dict[str, str] | None = No
 
     if not findings:
         findings.append("Fuzz: No injection sinks detected in changed files.")
+        log.info("No injection sinks found")
+    else:
+        log.info(f"Fuzz found {len(findings)} sinks")
 
     return findings

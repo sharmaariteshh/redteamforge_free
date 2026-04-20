@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}RedTeamForge{% endblock %}</title>
+    <meta name="description" content="RedTeamForge — Autonomous AI Red-Team Security Engine">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <span class="nav-logo"></span>
+            <span class="nav-title">RedTeamForge</span>
+            <span class="nav-badge">v3</span>
+        </div>
+        <div class="nav-links">
+            <a href="/dashboard" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">Dashboard</a>
+            <a href="/docs" class="nav-link">API Docs</a>
+            <a href="https://github.com/sharmaariteshh/redteamforge_free" class="nav-link" target="_blank">GitHub</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <p>RedTeamForge &mdash; Built by <a href="https://github.com/sharmaariteshh" target="_blank">Ritesh Sharma</a></p>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

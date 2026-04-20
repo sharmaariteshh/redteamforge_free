@@ -1,188 +1,72 @@
-# 🛡️ RedTeamForge
+# RedTeamForge 🛡️
 
-**Autonomous AI Red-Team Security Engine for CI/CD Pipelines**
+**RedTeamForge** is an Autonomous AI-Driven Security Engine designed to automatically red-team, fuzz, and analyze code for CI/CD pipelines. It acts as an elite, automated security engineer sitting inside your development pipeline, catching bleeding-edge vulnerabilities—especially those related to LLMs, injection attacks, and logic flaws—before they ever reach production.
 
-RedTeamForge analyzes pull requests, detects vulnerabilities, simulates attacks, and posts detailed security reports as PR comments — all automatically.
+## 📖 What It Actually Does
 
----
+When a developer submits code (e.g., via a Pull Request) or a repository is manually scanned, RedTeamForge triggers an asynchronous, multi-agent pipeline:
 
-## ⚡ Features
-
-- **GitHub Webhook Integration** — Triggers automatically on PR open/sync
-- **PR Diff Analysis** — Scans only changed files for speed
-- **Static Analysis** — Semgrep with auto-config
-- **LLM Code Detection** — Detects OpenAI, LangChain, prompt injection risks
-- **Attack Simulation** — Generates attack steps and payloads for each finding
-- **Fuzz Testing** — Identifies injection sinks in changed code
-- **Risk Scoring** — 0-100 score with severity weighting
-- **AI Expert Analysis** — Ollama-powered red-team analysis
-- **Markdown Reports** — Professional security reports posted to GitHub
-- **Scan Caching** — SQLite cache avoids redundant scans
-- **< 90 Second Performance** — Async parallel execution
+1. **Ingest & Isolation:** The Engine clones the repository into an isolated workspace (`data/repo_<scan_id>`). It is fully concurrent, allowing dozens of repositories to be scanned side-by-side without state bleeding.
+2. **Static Analysis (SAST):** It runs **Semgrep** under the hood, parsing syntax-aware rules to catch traditional CVEs, hardcoded secrets, and misconfigurations.
+3. **Fuzz Testing:** A dedicated `fuzz_agent` analyzes the codebase for dangerous sinks (like `eval()`, `exec()`, raw SQL queries). It then generates dynamic, intelligent payloads designed to break those specific sinks.
+4. **LLM/AI Detection:** A specialized scanner hunts for unsafe usage of LLM APIs (OpenAI, LangChain, Anthropic), detecting risks like Prompt Injection sinks and unvalidated AI outputs.
+5. **AI Red-Team Synthesis:** An offline, locally hosted LLM (via Ollama) digests all the findings. Instead of blindly reporting errors, it thinks like a hacker, explaining exactly *how* a discovered vulnerability could be exploited in the real world.
+6. **Reporting:** It computes a standardized Risk Score (0-100) and compiles a highly professional Markdown report, complete with attack simulations and remediation steps.
 
 ---
 
-## 🏗️ Architecture
+## ⚡ How It Differs From Existing Technologies
 
-```
-GitHub PR → Webhook → FastAPI
-    → Orchestrator
-        → Ingest (shallow clone)
-        → Diff Parser (changed files only)
-        → Parallel:
-            ├── Semgrep Scan
-            ├── Fuzz Testing
-            └── LLM Detection
-        → Attack Engine
-        → Ollama LLM Analysis
-        → Report Generator
-    → GitHub PR Comment
-```
+Most traditional security scanners (like SonarQube, Snyk, or GitHub Advanced Security) are **static rules-based engines**. They are notorious for producing high volumes of false positives and lack contextual awareness.
+
+**RedTeamForge differentiates itself through:**
+- **Hacker Mindset via AI:** It doesn't just say "SQL Injection found on line 42." It creates an *Attack Simulation*, providing the exact payload a hacker would use to breach the system based on the surrounding code context.
+- **LLM/AI Security First:** Traditional SAST tools do not understand the nuances of Prompt Injection or Agentic exploits. RedTeamForge is purpose-built to secure modern AI-integrated applications.
+- **Automated Fuzzing:** Instead of requiring manual unit tests, the engine automatically synthesizes fuzzing payloads tailored specifically to the AST (Abstract Syntax Tree) of the user's code.
+- **100% Data Privacy (Optional):** Because the expert analysis is powered by localized LLMs (via Ollama), highly proprietary enterprise code never has to leave the local network to hit an OpenAI API.
+- **Stunning, Emojiless Developer Experience:** A sleek, glass-free, hyper-minimal dark interface inspired by tools like Vercel and Linear, focusing strictly on high-signal data.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Use Cases: Where Can It Be Used?
 
-### 1. Clone & Install
-
-```bash
-git clone https://github.com/sharmaariteshh/redteamforge_free.git
-cd redteamforge_free
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# Linux/Mac:
-source .venv/bin/activate
-
-pip install -r requirements.txt
-```
-
-### 2. Configure
-
-```bash
-cp .env.example .env
-# Edit .env with your GitHub token and webhook secret
-```
-
-### 3. Start Ollama
-
-```bash
-ollama pull llama3
-ollama serve
-```
-
-### 4. Run the Server
-
-```bash
-uvicorn main:app --reload --port 8000
-```
-
-### 5. Expose with ngrok (for webhooks)
-
-```bash
-ngrok http 8000
-# Copy the HTTPS URL
-```
-
-### 6. Configure GitHub Webhook
-
-1. Go to your repo → Settings → Webhooks → Add webhook
-2. **Payload URL:** `https://your-ngrok-url/github/webhook`
-3. **Content type:** `application/json`
-4. **Secret:** Same as `GITHUB_WEBHOOK_SECRET` in `.env`
-5. **Events:** Select "Pull requests"
+1. **CI/CD Pipeline Gatekeeper:** Integrated directly into GitHub Actions or GitLab CI. If a PR introduces an LLM prompt injection vulnerability, RedTeamForge flags the PR with a `CRITICAL` badge and automatically comments the attack vector, blocking the merge.
+2. **Security Auditing for AI Startups:** Startups building wrappers around OpenAI/Claude can use RedTeamForge to automatically verify they aren't vulnerable to prompt leaking or jailbreaks.
+3. **Continuous Red-Teaming:** Security teams can schedule cron jobs to continuously scan external dependencies and internal microservices for zero-day regressions.
+4. **Bug Bounty Triage:** Bug bounty platforms can use the engine as a first-pass triage tool to validate if user-submitted code snippets contain exploitable sinks.
 
 ---
 
-## 📡 API Endpoints
+## 🛠️ How It Works (Architecture)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | Health check |
-| `POST` | `/github/webhook` | GitHub webhook receiver |
-| `POST` | `/scan` | Manual repo scan |
-| `POST` | `/test/pr` | Test endpoint (sync) |
-| `GET` | `/docs` | Swagger UI |
+Built on a robust, async Python stack for maximum performance on multithreaded cloud deployments.
 
-### Manual Scan
-
-```bash
-curl -X POST http://localhost:8000/scan \
-  -H "Content-Type: application/json" \
-  -d '{"repo": "https://github.com/user/repo.git"}'
-```
-
-### Test a PR
-
-```bash
-curl -X POST http://localhost:8000/test/pr \
-  -H "Content-Type: application/json" \
-  -d '{"owner": "sharmaariteshh", "repo": "redteamforge_free", "pr_number": 1}'
-```
+- **FastAPI Core:** Provides the high-throughput REST API, Webhook endpoints, and serves the Jinja2 UI.
+- **SQLite Tracker:** Maintains persistent history, asynchronous state tracking, and analytical aggregations of all scans.
+- **Agentic Workflow:**
+  - `orchestrator.py`: The brain. Manages the lifecycle, handles background tasks, and propagates `scan_id` context.
+  - `ingest_agent.py`: Handles secure, shallow `git clone` isolation with smart fallback branch detection.
+  - `scan_agent.py`: A highly optimized Semgrep wrapper with aggressive UTF-8 enforcement to prevent cross-OS encoding crashes.
+  - `fuzz_agent.py`: AST-aware sink detector and payload synthesizer.
+  - `llm_agent.py`: Interfaces with Ollama to provide the human-readable "Red Team Expert Analysis".
+  - `report_agent.py`: Calculates Risk Scores (0-100) and merges findings into an executive-ready Markdown document.
 
 ---
 
-## 📊 Report Format
+## 🔭 Future Scopes & Advancements
 
-```
-🛡️ RedTeamForge Security Report
+While Phase 2 has solidified the engine for production, the roadmap involves making the engine truly *autonomous*:
 
-📋 Summary — risk score, finding counts
-🔍 Static Analysis Findings — Semgrep results
-🧪 Fuzz Testing Results — injection sink detection
-⚔️ Attack Simulations — steps + payloads per vuln
-🤖 LLM/AI Detections — prompt injection risks
-🧠 AI Red-Team Analysis — Ollama expert analysis
-✅ Recommendations — merge / block guidance
-```
-
----
-
-## 🛠️ Tech Stack (100% Free)
-
-| Component | Tool |
-|-----------|------|
-| Backend | FastAPI |
-| LLM | Ollama (llama3) |
-| Scanner | Semgrep |
-| Database | SQLite |
-| HTTP | httpx (async) |
-| Hosting | Local + ngrok / Fly.io |
+1. **Self-Healing Code (Auto-Remediation):**
+   - *Advancement:* Instead of just blocking a PR, RedTeamForge will automatically generate a new commit containing the patched code and push it back to the branch.
+2. **Active Web-Fuzzing (DAST Integration):**
+   - *Advancement:* Transitioning from Static to Dynamic analysis. RedTeamForge will spin up a Docker container of the PR code, launch a headless browser, and actively fire its generated payloads at the living application.
+3. **Advanced AI Payload Generation:**
+   - *Advancement:* Using Reinforcement Learning, the fuzzing agent will learn from its own failed payloads, mutating them on the fly until it successfully bypasses WAFs or input sanitizers.
+4. **Enterprise Authentication & Access Control:**
+   - *Advancement:* Implementing OAuth2 / JWT protocols to allow different developer teams to isolate their dashboards and manage granular API webhook secrets.
+5. **Real-Time WebSockets:**
+   - *Advancement:* Upgrading the UI polling mechanism to a full WebSocket (`ws://`) connection for millisecond-latency streaming of scan progress line-by-line.
 
 ---
-
-## 📁 Project Structure
-
-```
-redteamforge_free/
-├── main.py              # FastAPI app + endpoints
-├── config.py            # Environment configuration
-├── github_client.py     # GitHub API interactions
-├── diff_parser.py       # PR diff parsing
-├── llm_detector.py      # LLM/AI code detection
-├── attack_engine.py     # Attack simulation engine
-├── db.py                # SQLite scan cache
-├── .env.example         # Environment template
-├── requirements.txt     # Python dependencies
-├── agents/
-│   ├── orchestrator.py  # Pipeline coordinator
-│   ├── ingest_agent.py  # Repo cloning
-│   ├── scan_agent.py    # Semgrep scanning
-│   ├── fuzz_agent.py    # Fuzz testing
-│   ├── llm_agent.py     # Ollama LLM analysis
-│   └── report_agent.py  # Report generation
-└── data/
-    └── repo/            # Cloned PR repo
-```
-
----
-
-## 👤 Author
-
-**Ritesh Sharma** — [@sharmaariteshh](https://github.com/sharmaariteshh)
-
----
-
-## 📝 License
-
-MIT
+*Built for the future of AI and Application Security.*

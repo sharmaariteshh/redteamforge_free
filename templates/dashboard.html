@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% set active_page = "dashboard" %}
+{% block title %}Dashboard — RedTeamForge{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+    <h1>Security Dashboard</h1>
+    <p class="subtitle">Overview of repository security scans</p>
+</div>
+
+<!-- Stats -->
+<div class="stats-grid">
+    <div class="stat-card glass">
+        <div class="stat-value">{{ stats.total_scans }}</div>
+        <div class="stat-label">Total Scans</div>
+    </div>
+    <div class="stat-card glass">
+        <div class="stat-value">{{ stats.avg_risk_score }}</div>
+        <div class="stat-label">Avg Risk Score</div>
+    </div>
+    <div class="stat-card glass">
+        <div class="stat-value">{{ stats.critical_scans }}</div>
+        <div class="stat-label">Critical</div>
+    </div>
+    <div class="stat-card glass">
+        <div class="stat-value">{{ stats.total_vulnerabilities }}</div>
+        <div class="stat-label">Vulnerabilities</div>
+    </div>
+    <div class="stat-card glass">
+        <div class="stat-value">{{ stats.total_simulations }}</div>
+        <div class="stat-label">Simulations</div>
+    </div>
+</div>
+
+<!-- Severity Breakdown -->
+{% if stats.vuln_by_severity %}
+<div class="chart-section glass">
+    <h3>Severity Breakdown</h3>
+    <div class="bar-chart">
+        {% for sev, count in stats.vuln_by_severity.items() %}
+        <div class="bar-row">
+            <span class="bar-label severity-{{ sev | lower }}">{{ sev }}</span>
+            <div class="bar-track">
+                <div class="bar-fill severity-bg-{{ sev | lower }}" style="width: {{ [count / (stats.total_vulnerabilities or 1) * 100, 100] | min }}%"></div>
+            </div>
+            <span class="bar-value">{{ count }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- New Scan -->
+<div class="new-scan-section glass">
+    <h3>New Scan</h3>
+    <form id="new-scan-form" class="filter-form">
+        <div class="filter-group" style="flex: 1;">
+            <label for="repo-url">Repository URL</label>
+            <input type="url" id="repo-url" placeholder="https://github.com/user/repo" required>
+        </div>
+        <div class="filter-group" style="width: 100px;">
+            <label for="repo-branch">Branch</label>
+            <input type="text" id="repo-branch" placeholder="default">
+        </div>
+        <button type="submit" class="btn btn-primary" id="scan-btn">Scan</button>
+    </form>
+    <div id="scan-message" style="display:none; margin-top:0.6rem; font-size:0.8rem; font-weight:500;"></div>
+</div>
+
+<!-- Filters -->
+<div class="filters glass">
+    <form method="get" action="/dashboard" class="filter-form">
+        <div class="filter-group">
+            <label for="repo-filter">Repository</label>
+            <input type="text" id="repo-filter" name="repo" value="{{ filter_repo }}" placeholder="Filter...">
+        </div>
+        <div class="filter-group">
+            <label for="status-filter">Status</label>
+            <select id="status-filter" name="status">
+                <option value="">All</option>
+                <option value="pending" {% if filter_status == 'pending' %}selected{% endif %}>Pending</option>
+                <option value="running" {% if filter_status == 'running' %}selected{% endif %}>Running</option>
+                <option value="completed" {% if filter_status == 'completed' %}selected{% endif %}>Completed</option>
+                <option value="failed" {% if filter_status == 'failed' %}selected{% endif %}>Failed</option>
+            </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Filter</button>
+        <a href="/dashboard" class="btn btn-ghost">Clear</a>
+    </form>
+</div>
+
+<!-- Scans Table -->
+<div class="table-wrapper glass">
+    <h3>Scan History</h3>
+    {% if scans %}
+    <table class="scan-table" id="scan-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Repository</th>
+                <th>PR</th>
+                <th>Status</th>
+                <th>Risk</th>
+                <th>Date</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for scan in scans %}
+            <tr class="scan-row" onclick="window.location='/dashboard/scan/{{ scan.id }}'">
+                <td><code class="scan-id">{{ scan.id[:12] }}</code></td>
+                <td class="repo-name">{{ scan.repo }}</td>
+                <td>
+                    {% if scan.pr_number %}
+                    <a href="{{ scan.pr_url }}" target="_blank" class="pr-link" onclick="event.stopPropagation()">#{{ scan.pr_number }}</a>
+                    {% else %}
+                    <span class="text-muted">--</span>
+                    {% endif %}
+                </td>
+                <td><span class="status-badge status-{{ scan.status }}">{{ scan.status }}</span></td>
+                <td>
+                    <div class="risk-indicator">
+                        <div class="risk-bar">
+                            <div class="risk-fill {% if scan.risk_score >= 75 %}risk-critical{% elif scan.risk_score >= 50 %}risk-high{% elif scan.risk_score >= 25 %}risk-medium{% else %}risk-low{% endif %}" style="width: {{ scan.risk_score }}%"></div>
+                        </div>
+                        <span class="risk-value">{{ scan.risk_score }}</span>
+                    </div>
+                </td>
+                <td class="scan-date">
+                    {% if scan.created_at %}
+                    <script>document.currentScript.parentElement.textContent = new Date({{ scan.created_at }} * 1000).toLocaleString();</script>
+                    {% endif %}
+                </td>
+                <td><a href="/dashboard/scan/{{ scan.id }}" class="btn btn-sm">View</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <p>No scans found. Enter a repository URL above to start scanning.</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+// ── New scan form handler ──
+document.getElementById('new-scan-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const repo = document.getElementById('repo-url').value;
+    const branch = document.getElementById('repo-branch').value;
+    const btn = document.getElementById('scan-btn');
+    const msg = document.getElementById('scan-message');
+
+    btn.disabled = true;
+    btn.textContent = "Scanning...";
+    msg.style.display = "block";
+    msg.className = "scan-msg-info";
+    msg.textContent = "Initiating scan...";
+
+    try {
+        const res = await fetch('/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ repo, branch })
+        });
+
+        if (res.ok) {
+            msg.className = "scan-msg-success";
+            msg.textContent = "Scan queued. Dashboard will auto-refresh.";
+            // Poll for completion
+            startPolling();
+        } else {
+            const data = await res.json();
+            msg.className = "scan-msg-error";
+            msg.textContent = data.detail || "Failed to start scan.";
+            btn.disabled = false;
+            btn.textContent = "Scan";
+        }
+    } catch (err) {
+        msg.className = "scan-msg-error";
+        msg.textContent = "Connection error.";
+        btn.disabled = false;
+        btn.textContent = "Scan";
+    }
+});
+
+// ── Auto-refresh: poll for status changes ──
+function startPolling() {
+    let attempts = 0;
+    const poll = setInterval(async () => {
+        attempts++;
+        if (attempts > 60) { clearInterval(poll); return; }
+        try {
+            const res = await fetch('/api/scans?limit=1');
+            const data = await res.json();
+            const scans = data.scans || [];
+            if (scans.length > 0 && (scans[0].status === 'completed' || scans[0].status === 'failed')) {
+                clearInterval(poll);
+                window.location.reload();
+            }
+        } catch {}
+    }, 3000);
+}
+
+// If any scan is currently running, start polling automatically
+(function() {
+    const badges = document.querySelectorAll('.status-badge');
+    for (const b of badges) {
+        if (b.textContent.trim() === 'running' || b.textContent.trim() === 'pending') {
+            startPolling();
+            break;
+        }
+    }
+})();
+</script>
+
+{% endblock %}

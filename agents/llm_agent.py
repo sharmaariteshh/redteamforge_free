@@ -1,10 +1,15 @@
 """
 RedTeamForge — LLM Analysis Agent
 Sends scan + fuzz results to Ollama with the master prompt for expert analysis.
+Now with retry logic and structured logging.
 """
 
 import httpx
 from config import OLLAMA_URL, MODEL, LLM_MAX_INPUT_CHARS
+from logger import get_logger
+from retry import with_retry
+
+log = get_logger("llm_agent")
 
 MASTER_PROMPT = """You are RedTeamForge — an elite AI red-team security analysis system.
 
@@ -48,6 +53,18 @@ Be technical, precise, and concise. Do not include disclaimers.
 """
 
 
+async def _call_ollama(prompt: str) -> str:
+    """Call Ollama API with retry."""
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        res = await client.post(OLLAMA_URL, json={
+            "model": MODEL,
+            "prompt": prompt,
+            "stream": False,
+        })
+        res.raise_for_status()
+        return res.json().get("response", "")
+
+
 async def analyze(
     scan_results: str,
     fuzz_results: list[str],
@@ -66,21 +83,23 @@ async def analyze(
         llm_detections=llm_trimmed or "None detected.",
     )
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        try:
-            res = await client.post(OLLAMA_URL, json={
-                "model": MODEL,
-                "prompt": prompt,
-                "stream": False,
-            })
-            res.raise_for_status()
-            return res.json().get("response", "")
-        except httpx.HTTPStatusError as e:
-            return f"LLM analysis error (HTTP {e.response.status_code}): {e.response.text[:500]}"
-        except httpx.ConnectError:
-            return (
-                "⚠️ Could not connect to Ollama. "
-                "Make sure Ollama is running (`ollama serve`) and the model is pulled."
-            )
-        except Exception as e:
-            return f"LLM analysis error: {repr(e)}"
+    try:
+        # Apply retry with up to 3 attempts and exponential backoff
+        retry_call = with_retry(
+            max_attempts=3,
+            min_wait=2.0,
+            max_wait=15.0,
+            retry_on=(httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError),
+        )
+        result = await retry_call(_call_ollama)(prompt)
+        log.info("Ollama analysis complete")
+        return result
+    except httpx.ConnectError:
+        log.warning("Could not connect to Ollama — skipping AI analysis")
+        return (
+            "⚠️ Could not connect to Ollama. "
+            "Make sure Ollama is running (`ollama serve`) and the model is pulled."
+        )
+    except Exception as e:
+        log.error(f"LLM analysis error: {repr(e)}")
+        return f"LLM analysis error: {repr(e)}"

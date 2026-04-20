@@ -5,3 +5,8 @@ rich
 python-dotenv
 aiosqlite
 jinja2
+loguru
+tenacity
+slowapi
+pydantic
+markdown2

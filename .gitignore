@@ -1,8 +1,11 @@
 .venv/
 __pycache__/
-data/repo/
+data/repo*
 data/redteamforge.db
+data/logs/
 .env
 report.md
 report.txt
 *.pyc
+test_output.txt
+error.txt
